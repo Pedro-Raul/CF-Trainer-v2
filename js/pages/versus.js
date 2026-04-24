@@ -44,8 +44,8 @@ export async function loadVersus() {
   state.ui.versusHandle = validHandle;
 
   const friend     = friends.find(f => f.handle === validHandle);
-  const mySubs     = state.submissions[user.handle]   || [];
-  const friendSubs = state.submissions[friend.handle] || [];
+  const mySubs     = state.submissions[user.handle?.toLowerCase()]   || [];
+  const friendSubs = state.submissions[friend.handle?.toLowerCase()] || [];
 
   page.innerHTML = buildLayout(user, friend, friends, validHandle);
 
