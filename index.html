@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CF Trainer</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>⚔️</text></svg>">
+  <link rel="stylesheet" href="./styles/base.css">
+</head>
+
+<body>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <span class="sidebar-logo-icon">⚔️</span>
+      <span class="sidebar-logo-text">CF Trainer</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      
+      <a class="nav-item" data-page="overview" onclick="navigateFromSidebar('overview')">
+        <span class="nav-icon">▦</span>
+        <span class="nav-label">Overview</span>
+      </a>
+      <a class="nav-item" data-page="individual" onclick="navigateFromSidebar('individual')">
+        <span class="nav-icon">◉</span>
+        <span class="nav-label">Mi perfil</span>
+      </a>
+      <a class="nav-item" data-page="friends" onclick="navigateFromSidebar('friends')">
+        <span class="nav-icon">◈</span>
+        <span class="nav-label">Amigos</span>
+      </a>
+
+      <a class="nav-item" data-page="torneo" onclick="navigateFromSidebar('torneo')">
+        <span class="nav-icon">⚔</span>
+        <span class="nav-label">Torneos</span>
+      </a>
+
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-user" id="sidebarUser"></div>
+      <button class="sidebar-logout" onclick="logout()">
+        <span class="nav-icon">⇥</span>
+        <span class="nav-label">Salir</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- OVERLAY móvil -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+  <!-- CONTENIDO -->
+  <div class="main-wrap">
+
+    <!-- TOPBAR móvil -->
+    <div class="topbar" id="topbar">
+      <button class="hamburger" onclick="toggleSidebar()">☰</button>
+      <span class="topbar-title">CF Trainer</span>
+    </div>
+
+    <!-- LOGIN -->
+    <div class="page" data-page="login">
+      <div class="login-box">
+        <div class="login-logo">
+          <h1>CF Trainer</h1>
+          <p>competitive programming</p>
+        </div>
+        <label for="nameInput">Nombre</label>
+        <input id="nameInput" type="text" placeholder="ej. Alejandro">
+        <label for="handleInput">Handle de Codeforces</label>
+        <input id="handleInput" type="text" placeholder="ej. tourist">
+        <button onclick="loginFromUI()">Entrar →</button>
+      </div>
+    </div>
+
+    <!-- OVERVIEW -->
+    <div class="page" data-page="overview">
+      <div class="page-header">
+        <div class="page-title">Overview</div>
+        <div class="page-sub" id="overviewSub"></div>
+      </div>
+      <div id="overviewContent"></div>
+    </div>
+
+    <!-- INDIVIDUAL -->
+    <div class="page" data-page="individual"></div>
+
+    <!-- FRIENDS -->
+    <div class="page" data-page="friends"></div>
+
+    <!-- TORNEO -->
+    <div class="page" data-page="torneo"></div>
+
+  </div>
+
+  <script type="module" src="./js/app.js"></script>
+
+</body>
+</html>
