@@ -7,7 +7,7 @@ import {
 
 export function loadOverview() {
   const user = state.currentUser;
-  const subs = state.submissions[user.handle] || [];
+  const subs = state.submissions[user.handle] || state.submissions[user.handle?.toLowerCase()] || [];
 
   const me = {
     handle:     user.handle,
@@ -20,7 +20,7 @@ export function loadOverview() {
   };
 
   const friendRows = state.friends.map(f => {
-    const fsubs = state.submissions[f.handle] || [];
+    const fsubs = state.submissions[f.handle] || state.submissions[f.handle?.toLowerCase()] || [];
     return {
       handle:     f.handle,
       avatar:     f.avatar,

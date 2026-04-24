@@ -63,6 +63,9 @@ async function initApp() {
       state.submissions[state.currentUser.handle] = subs;
       saveSubmissions(state.submissions);
     }
+
+    // Rehidratar submissions faltantes de amigos ya guardados
+    await hydrateMissingFriendSubmissions();
     navigate('overview');
   } else {
     navigate('login');
@@ -160,4 +163,27 @@ function normalizeSubmissionsMap(submissionsMap) {
   }
 
   return normalized;
+}
+
+async function hydrateMissingFriendSubmissions() {
+  if (!state.friends?.length) return;
+
+  const { getCFSubmissions } = await import('./services/codeforces.js');
+  let didChange = false;
+
+  for (const friend of state.friends) {
+    const handle = friend?.handle?.toLowerCase?.();
+    if (!handle) continue;
+    if (state.submissions[handle]) continue;
+
+    try {
+      const subs = await getCFSubmissions(handle);
+      state.submissions[handle] = subs;
+      didChange = true;
+    } catch (err) {
+      console.warn(`No se pudieron cargar submissions de ${handle}:`, err);
+    }
+  }
+
+  if (didChange) saveSubmissions(state.submissions);
 }
