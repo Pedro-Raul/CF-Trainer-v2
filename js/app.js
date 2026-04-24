@@ -16,7 +16,7 @@ import {
 import { getProblemset } from './services/codeforces.js';
 import { login } from './services/auth.js';
 import { loadTournaments } from './core/storage.js';
-import { importTournament, decodeTournamentFromURL } from './services/tournament.js';
+import { importTournament, decodeTournamentFromURL, normalizeTournamentShape } from './services/tournament.js';
 
 async function initApp() {
   console.log("App iniciada");
@@ -28,7 +28,7 @@ async function initApp() {
   state.users       = normalizeHandleArray(rawUsers);
   state.submissions = normalizeSubmissionsMap(rawSubs);
   state.friends     = normalizeHandleArray(rawFriends);
-  state.tournaments = loadTournaments();
+  state.tournaments = loadTournaments().map(normalizeTournamentShape);
 
   if (JSON.stringify(rawUsers) !== JSON.stringify(state.users)) {
     saveUsers(state.users);

@@ -7,7 +7,8 @@ import {
   pickProblems,
   getTournamentShareLink,
   decodeTournamentFromURL,
-  verifySolutions
+  verifySolutions,
+  syncTournamentParticipants
 } from '../services/tournament.js';
 
 const CF_TAGS = [
@@ -210,6 +211,7 @@ function renderCard(t) {
   const mySolved  = me ? Object.keys(me.solvedAt).length : 0;
   const pct       = total ? Math.round((mySolved / total) * 100) : 0;
   const updated   = t.lastUpdated ? timeAgo(t.lastUpdated) : 'nunca';
+  const globalSync = t.lastGlobalSyncAt ? ` · global: ${timeAgo(t.lastGlobalSyncAt)}` : '';
 
   return `
   <div class="tn-card" id="tnc-${t.id}">
@@ -250,7 +252,10 @@ function renderCard(t) {
       <button class="tn-verify-btn secondary" id="tnVBtn-${t.id}" onclick="verifyUI(${t.id})">
         ↻ Verificar mis soluciones en CF
       </button>
-      <span class="tn-verify-hint" id="tnVHint-${t.id}">Actualizado: ${updated}</span>
+      <button class="tn-verify-btn secondary" id="tnSyncAll-${t.id}" onclick="syncAllParticipantsUI(${t.id})">
+        ↻ Sincronizar participantes
+      </button>
+      <span class="tn-verify-hint" id="tnVHint-${t.id}">Actualizado: ${updated}${globalSync}</span>
     </div>
 
     <!-- Grid de participantes -->
@@ -286,6 +291,7 @@ function renderCard(t) {
               ${isSolved
                 ? `<span class="tn-p-time">+${formatMs(timeTaken)}</span>`
                 : `<span class="tn-p-solvers">${solvedBy}/${t.participants.length}</span>`}
+              ${renderProblemSubmitSplit(t, key, user.handle)}
             </div>
           </a>`;
       }).join('')}
@@ -299,7 +305,9 @@ function renderCard(t) {
         return `
         <div class="tn-lb-row ${isMe ? 'tn-lb-me' : ''}">
           <span class="lb-pos ${i===0?'gold':i===1?'silver':i===2?'bronze':''}">${i+1}</span>
+          <span class="tn-lb-avatar ${isMe ? 'tn-lb-avatar-me' : ''}">${getHandleInitial(u.handle)}</span>
           <span class="tn-lb-handle">${u.handle}</span>
+          <span class="tn-role-pill ${isMe ? 'tn-role-pill-me' : ''}">${isMe ? 'Tú' : 'Participante'}</span>
           <div class="tn-lb-bar-wrap">
             <div class="tn-lb-bar" style="width:${total ? Math.round((u.count/total)*100) : 0}%"></div>
           </div>
@@ -319,9 +327,16 @@ function renderParticipantGrid(t, lb) {
   return lb.map(u => {
     const isMe = u.handle.toLowerCase() === user.handle.toLowerCase();
     const pct  = total ? Math.round((u.count / total) * 100) : 0;
+    const p = t.participants.find(item => item.handle.toLowerCase() === u.handle.toLowerCase());
     return `
       <div class="tn-pg-item ${isMe ? 'tn-pg-me' : ''}">
-        <div class="tn-pg-handle">${isMe ? '★ ' : ''}${u.handle}</div>
+        <div class="tn-pg-head">
+          <span class="tn-pg-avatar ${isMe ? 'tn-pg-avatar-me' : ''}">${getHandleInitial(u.handle)}</span>
+          <div class="tn-pg-head-text">
+            <div class="tn-pg-handle">${u.handle}</div>
+            <div class="tn-pg-role">${isMe ? 'Tú' : 'Participante'} · ${p?.lastSyncedAt ? `sync ${timeAgo(p.lastSyncedAt)}` : 'sin sync'}</div>
+          </div>
+        </div>
         <div class="tn-pg-bar-wrap">
           <div class="tn-pg-bar" style="width:${pct}%"></div>
         </div>
@@ -515,6 +530,36 @@ function bindGlobals() {
     }
   };
 
+  window.syncAllParticipantsUI = async (id) => {
+    const btn = document.getElementById(`tnSyncAll-${id}`);
+    const hint = document.getElementById(`tnVHint-${id}`);
+    if (!btn) return;
+
+    btn.disabled = true;
+    btn.textContent = '↻ Sincronizando…';
+    if (hint) hint.textContent = 'Actualizando submits de todos los participantes…';
+
+    try {
+      const result = await syncTournamentParticipants(id);
+      if (!result) throw new Error('Torneo no encontrado');
+      const { tournament: updated, synced } = result;
+      btn.textContent = `✓ ${synced} sincronizados`;
+      if (hint) hint.textContent = `Actualizado: ${timeAgo(updated.lastUpdated)} · global: ${timeAgo(updated.lastGlobalSyncAt)}`;
+
+      const card = document.getElementById(`tnc-${id}`);
+      if (card) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = renderCard(updated);
+        card.replaceWith(tmp.firstElementChild);
+      }
+      bindGlobals();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = '↻ Sincronizar participantes';
+      if (hint) hint.textContent = `Error: ${err.message}`;
+    }
+  };
+
   // ── Eliminar ──────────────────────────────────────────────
   window.deleteTournamentUI = (id) => {
     if (!confirm('¿Eliminar este torneo? No se puede deshacer.')) return;
@@ -563,4 +608,22 @@ function ratingPill(r) {
   if (r <= 1899) return 'purple';
   if (r <= 2199) return 'amber';
   return 'red';
+}
+
+function getHandleInitial(handle) {
+  return handle?.trim()?.charAt(0)?.toUpperCase?.() || '?';
+}
+
+function renderProblemSubmitSplit(tournament, problemKey, currentHandle) {
+  let mine = 0;
+  let others = 0;
+  for (const [handle, cache] of Object.entries(tournament.submissionsByHandle || {})) {
+    const matches = (cache?.submissions || []).filter(sub =>
+      `${sub?.problem?.contestId}-${sub?.problem?.index}` === problemKey
+    ).length;
+    if (!matches) continue;
+    if (handle.toLowerCase() === currentHandle.toLowerCase()) mine += matches;
+    else others += matches;
+  }
+  return `<div class="tn-p-subsplit"><span class="tn-p-sub-mine">Tú ${mine}</span><span class="tn-p-sub-other">Otros ${others}</span></div>`;
 }

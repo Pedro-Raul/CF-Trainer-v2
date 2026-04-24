@@ -2,17 +2,19 @@ import { state } from '../core/state.js';
 import { saveTournaments, loadTournaments } from '../core/storage.js';
 import { getCFSubmissions } from './codeforces.js';
 
+const SUBMISSION_FIELDS = ['id', 'verdict', 'creationTimeSeconds', 'problem'];
+
 // ── Crear ──────────────────────────────────────────────────
 
 export function createTournament({ name, problems, creatorHandle, participantHandles = [] }) {
   const seen = new Set([creatorHandle.toLowerCase()]);
-  const participants = [{ handle: creatorHandle, solvedAt: {} }];
+  const participants = [{ handle: creatorHandle, role: 'creator', solvedAt: {}, lastSyncedAt: null }];
 
   for (const h of participantHandles) {
     const hl = h.trim().toLowerCase();
     if (hl && !seen.has(hl)) {
       seen.add(hl);
-      participants.push({ handle: h.trim(), solvedAt: {} });
+      participants.push({ handle: h.trim(), role: 'participant', solvedAt: {}, lastSyncedAt: null });
     }
   }
 
@@ -22,9 +24,11 @@ export function createTournament({ name, problems, creatorHandle, participantHan
     name,
     creator:      creatorHandle,
     problems,
-    participants,           // [{ handle, solvedAt: {} }]
+    participants,           // [{ handle, role, solvedAt, lastSyncedAt }]
+    submissionsByHandle: {},
     createdAt:    Date.now(),
-    lastUpdated:  null
+    lastUpdated:  null,
+    lastGlobalSyncAt: null
   };
 
   state.tournaments.push(tournament);
@@ -41,7 +45,7 @@ export function joinTournament(code, handle) {
   if (t.participants.some(p => p.handle.toLowerCase() === handle.toLowerCase())) {
     throw new Error('Ya estás en este torneo');
   }
-  t.participants.push({ handle, solvedAt: {} });
+  t.participants.push({ handle, role: 'participant', solvedAt: {}, lastSyncedAt: null });
   saveTournaments(state.tournaments);
   return t;
 }
@@ -50,22 +54,8 @@ export function joinTournament(code, handle) {
 
 export function importTournament(data) {
   _syncFromStorage();
+  const incoming = normalizeTournamentShape(data);
   const existing = state.tournaments.find(t => t.id === data.id);
-
-  const incoming = {
-    id:          data.id,
-    code:        data.code,
-    name:        data.name,
-    creator:     data.creator,
-    problems:    data.problems,
-    participants: (data.participants || []).map(p =>
-      typeof p === 'string'
-        ? { handle: p, solvedAt: {} }
-        : { handle: p.handle, solvedAt: p.solvedAt || {} }
-    ),
-    createdAt:   data.createdAt,
-    lastUpdated: data.lastUpdated || null
-  };
 
   if (existing) {
     // Merge: añadir participantes nuevos y mergear solvedAt
@@ -76,12 +66,22 @@ export function importTournament(data) {
       if (!ex) {
         existing.participants.push(inc);
       } else {
+        ex.role = ex.role || inc.role;
+        ex.lastSyncedAt = Math.max(ex.lastSyncedAt || 0, inc.lastSyncedAt || 0) || null;
         // Preservar timestamps más tempranos
         for (const [k, ts] of Object.entries(inc.solvedAt)) {
           if (!ex.solvedAt[k] || ts < ex.solvedAt[k]) ex.solvedAt[k] = ts;
         }
       }
     }
+    for (const [handle, payload] of Object.entries(incoming.submissionsByHandle || {})) {
+      const key = handle.toLowerCase();
+      const current = existing.submissionsByHandle[key];
+      if (!current || (payload.updatedAt || 0) > (current.updatedAt || 0)) {
+        existing.submissionsByHandle[key] = payload;
+      }
+    }
+    existing.lastGlobalSyncAt = Math.max(existing.lastGlobalSyncAt || 0, incoming.lastGlobalSyncAt || 0) || null;
     saveTournaments(state.tournaments);
     return existing;
   }
@@ -99,10 +99,11 @@ export async function verifySolutions(tournamentId, handle, onProgress) {
 
   onProgress?.('fetching');
   const subs = await getCFSubmissions(handle);
+  const normalizedHandle = handle.toLowerCase();
 
   const problemKeys = new Set(t.problems.map(p => `${p.contestId}-${p.index}`));
   const participant = t.participants.find(
-    p => p.handle.toLowerCase() === handle.toLowerCase()
+    p => p.handle.toLowerCase() === normalizedHandle
   );
   if (!participant) return null;
 
@@ -118,9 +119,51 @@ export async function verifySolutions(tournamentId, handle, onProgress) {
     }
   }
 
+  t.submissionsByHandle[normalizedHandle] = {
+    updatedAt: Date.now(),
+    submissions: reduceTournamentSubmissions(subs, problemKeys)
+  };
+  participant.lastSyncedAt = Date.now();
   t.lastUpdated = Date.now();
   saveTournaments(state.tournaments);
   return { tournament: t, newlySolved };
+}
+
+export async function syncTournamentParticipants(tournamentId, onProgress) {
+  const t = state.tournaments.find(item => item.id === tournamentId);
+  if (!t) return null;
+
+  const problemKeys = new Set(t.problems.map(p => `${p.contestId}-${p.index}`));
+  let synced = 0;
+
+  for (const participant of t.participants) {
+    onProgress?.({ handle: participant.handle, status: 'fetching' });
+    const subs = await getCFSubmissions(participant.handle);
+    const handle = participant.handle.toLowerCase();
+
+    for (const sub of subs) {
+      if (sub.verdict !== 'OK' || !sub.problem) continue;
+      const key = `${sub.problem.contestId}-${sub.problem.index}`;
+      if (!problemKeys.has(key)) continue;
+      const ts = sub.creationTimeSeconds * 1000;
+      if (!participant.solvedAt[key] || ts < participant.solvedAt[key]) {
+        participant.solvedAt[key] = ts;
+      }
+    }
+
+    participant.lastSyncedAt = Date.now();
+    t.submissionsByHandle[handle] = {
+      updatedAt: Date.now(),
+      submissions: reduceTournamentSubmissions(subs, problemKeys)
+    };
+    synced++;
+    onProgress?.({ handle: participant.handle, status: 'done' });
+  }
+
+  t.lastUpdated = Date.now();
+  t.lastGlobalSyncAt = Date.now();
+  saveTournaments(state.tournaments);
+  return { tournament: t, synced };
 }
 
 // ── Eliminar ───────────────────────────────────────────────
@@ -169,15 +212,18 @@ export function pickProblems({ problems, ratingMin, ratingMax, tags, count, excl
 // ── Compartir link ─────────────────────────────────────────
 
 export function getTournamentShareLink(tournament) {
+  const normalized = normalizeTournamentShape(tournament);
   const payload = {
-    id:           tournament.id,
-    code:         tournament.code,
-    name:         tournament.name,
-    creator:      tournament.creator,
-    problems:     tournament.problems,
-    participants: tournament.participants,
-    createdAt:    tournament.createdAt,
-    lastUpdated:  tournament.lastUpdated
+    id:                normalized.id,
+    code:              normalized.code,
+    name:              normalized.name,
+    creator:           normalized.creator,
+    problems:          normalized.problems,
+    participants:      normalized.participants,
+    submissionsByHandle: normalized.submissionsByHandle,
+    createdAt:         normalized.createdAt,
+    lastUpdated:       normalized.lastUpdated,
+    lastGlobalSyncAt:  normalized.lastGlobalSyncAt
   };
   const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
   return `${location.origin}${location.pathname}?t=${encoded}`;
@@ -194,9 +240,57 @@ export function decodeTournamentFromURL(encoded) {
 // ── Privados ───────────────────────────────────────────────
 
 function _syncFromStorage() {
-  const stored   = loadTournaments();
+  const stored   = loadTournaments().map(normalizeTournamentShape);
   const stateIds = new Set(state.tournaments.map(t => t.id));
   stored.forEach(t => { if (!stateIds.has(t.id)) state.tournaments.push(t); });
+}
+
+export function normalizeTournamentShape(tournament) {
+  const participants = (tournament.participants || []).map(p => {
+    if (typeof p === 'string') {
+      return { handle: p, role: 'participant', solvedAt: {}, lastSyncedAt: null };
+    }
+    return {
+      handle: p.handle,
+      role: p.role || 'participant',
+      solvedAt: p.solvedAt || {},
+      lastSyncedAt: p.lastSyncedAt || null
+    };
+  });
+
+  const creator = tournament.creator;
+  const creatorEntry = participants.find(p => p.handle?.toLowerCase() === creator?.toLowerCase());
+  if (creatorEntry) creatorEntry.role = 'creator';
+
+  const submissionsByHandle = {};
+  for (const [handle, payload] of Object.entries(tournament.submissionsByHandle || {})) {
+    submissionsByHandle[handle.toLowerCase()] = {
+      updatedAt: payload?.updatedAt || null,
+      submissions: Array.isArray(payload?.submissions) ? payload.submissions : []
+    };
+  }
+
+  return {
+    ...tournament,
+    participants,
+    submissionsByHandle,
+    lastUpdated: tournament.lastUpdated || null,
+    lastGlobalSyncAt: tournament.lastGlobalSyncAt || null
+  };
+}
+
+function reduceTournamentSubmissions(submissions, problemKeys) {
+  return submissions
+    .filter(sub => sub?.problem && problemKeys.has(`${sub.problem.contestId}-${sub.problem.index}`))
+    .map(sub => pickSubmissionFields(sub))
+    .sort((a, b) => (b.creationTimeSeconds || 0) - (a.creationTimeSeconds || 0))
+    .slice(0, 300);
+}
+
+function pickSubmissionFields(sub) {
+  const output = {};
+  for (const key of SUBMISSION_FIELDS) output[key] = sub?.[key];
+  return output;
 }
 
 function generateCode() {
