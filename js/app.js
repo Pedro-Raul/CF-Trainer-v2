@@ -14,42 +14,37 @@ async function initApp() {
   state.users       = loadUsers();
   state.submissions = loadSubmissions();
   state.friends     = loadFriends();
-  state.problems    = (await getProblemset()).slice(0, 3000);
   state.tournaments = loadTournaments();
+
+  try {
+    state.problems = (await getProblemset()).slice(0, 3000);
+  } catch (err) {
+    console.warn('No se pudo cargar problemset de Codeforces:', err);
+    state.problems = [];
+  }
 
   const session = loadSession();
   initRouter();
 
   if (session) {
-    state.currentUser = session;
+    state.currentUser = {
+      ...session,
+      handle: session.handle?.toLowerCase?.() || session.handle
+    };
 
-    if (!state.submissions[session.handle]) {
+    if (!state.submissions[state.currentUser.handle]) {
       const { getCFSubmissions } = await import('./services/codeforces.js');
       const { saveSubmissions }  = await import('./core/storage.js');
-      const subs = await getCFSubmissions(session.handle);
-      state.submissions[session.handle] = subs;
+      const subs = await getCFSubmissions(state.currentUser.handle);
+      state.submissions[state.currentUser.handle] = subs;
       saveSubmissions(state.submissions);
     }
     navigate('overview');
   } else {
     navigate('login');
   }
-
-  // Procesar ?t= en la URL (torneo compartido por link)
-  const urlParams = new URLSearchParams(location.search);
-  const tParam    = urlParams.get('t');
-
-  if (tParam && state.currentUser) {
-    try {
-      const data = decodeTournamentFromURL(tParam);
-      if (data) importTournament(data);
-    } catch (e) {
-      console.warn('Error importando torneo desde URL:', e);
-    }
-    history.replaceState({}, '', location.pathname);
-    navigate('torneo');
-  }
 }
+
 
 window.addUserFromUI = async function () {
   const input = document.getElementById('userInput');

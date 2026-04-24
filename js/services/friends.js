@@ -14,9 +14,10 @@ export async function addFriend(handle) {
   }
 
   const cfUser = await getCFUser(handle);
+  const normalizedHandle = cfUser.handle.toLowerCase();
 
   const friend = {
-    handle:    cfUser.handle,
+    handle:    normalizedHandle,
     rating:    cfUser.rating    || 0,
     rank:      cfUser.rank      || "unrated",
     maxRating: cfUser.maxRating || 0,
@@ -27,9 +28,9 @@ export async function addFriend(handle) {
   state.friends.push(friend);
 
   // cargar submissions del amigo si no las tenemos
-  if (!state.submissions[cfUser.handle]) {
+  if (!state.submissions[normalizedHandle]) {
     const subs = await getCFSubmissions(cfUser.handle);
-    state.submissions[cfUser.handle] = subs;
+    state.submissions[normalizedHandle] = subs;
     saveSubmissions(state.submissions);
   }
 
