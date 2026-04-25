@@ -2352,6 +2352,12 @@ input::placeholder { color: var(--muted2); }
   font-family: var(--mono);
   flex: 1;
 }
+.tn-sync-banner {
+  margin: -4px 0 12px;
+  font-size: 10px;
+  color: var(--muted2);
+  font-family: var(--mono);
+}
 
 /* ── Grid de participantes ───────────────────────────────── */
 .tn-pgrid {
@@ -2552,6 +2558,15 @@ input::placeholder { color: var(--muted2); }
   color: var(--purple);
   border-color: var(--purple);
   background: var(--purple-bg);
+}
+.tn-role-pill-friend {
+  color: var(--blue);
+  border-color: var(--blue);
+  background: var(--blue-bg);
+}
+.tn-role-pill-external {
+  color: var(--muted2);
+  border-color: var(--border-hi);
 }
 .tn-lb-bar-wrap {
   flex: 1;

@@ -123,14 +123,9 @@ window.loginFromUI = async function () {
 window.logout = function () {
   clearSession();
   state.currentUser = null;
-  state.users       = [];
-  state.submissions = {};
-  state.problems    = [];
-  state.friends     = [];
+  // Mantener caches en memoria para evitar estado inconsistente al relogin.
   navigate('login');
 };
-
-document.addEventListener('DOMContentLoaded', initApp);
 
 document.addEventListener('DOMContentLoaded', initApp);
 
