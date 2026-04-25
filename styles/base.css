@@ -2577,7 +2577,33 @@ input::placeholder { color: var(--muted2); }
   gap: 12px;
   margin-bottom: 4px;
 }
+.tn-modal-row-compact { margin-top: 6px; }
 .tn-modal-col label { margin-top: 0; }
+.tn-modal textarea {
+  width: 100%;
+  margin-bottom: 0;
+  min-height: 56px;
+  resize: vertical;
+}
+.tn-div-picker {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tn-div-option {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 8px;
+}
+.tn-div-option.selected {
+  color: var(--purple);
+  border-color: var(--purple);
+  background: var(--purple-bg);
+}
 
 /* Checklist de amigos */
 .tn-participants-section { margin-top: 4px; }

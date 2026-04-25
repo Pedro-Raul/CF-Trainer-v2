@@ -194,19 +194,84 @@ export function getLeaderboard(tournament) {
 
 // ── Seleccionar problemas ─────────────────────────────────
 
-export function pickProblems({ problems, ratingMin, ratingMax, tags, count, excludeSolved }) {
-  let pool = problems.filter(p => {
+export function pickProblems({
+  problems,
+  ratingMin,
+  ratingMax,
+  tags,
+  count,
+  excludeSolved,
+  forcedProblemRefs = [],
+  minSolvedCount = 0,
+  divisions = []
+}) {
+  const byKey = new Map(problems.map(p => [`${p.contestId}-${p.index}`.toLowerCase(), p]));
+  const selected = [];
+  const selectedKeys = new Set();
+
+  for (const ref of forcedProblemRefs) {
+    const key = normalizeProblemRef(ref);
+    if (!key) continue;
+    const forced = byKey.get(key);
+    if (!forced || selectedKeys.has(key)) continue;
+    selected.push(forced);
+    selectedKeys.add(key);
+    if (selected.length >= count) return selected.slice(0, count);
+  }
+
+  const targetRating = Math.round((ratingMin + ratingMax) / 2);
+  const desiredDivisions = new Set(divisions.map(Number).filter(Boolean));
+
+  const pool = problems.filter(p => {
+    const key = `${p.contestId}-${p.index}`;
+    if (selectedKeys.has(key.toLowerCase())) return false;
     if (!p.rating) return false;
     if (p.rating < ratingMin || p.rating > ratingMax) return false;
     if (tags.length && !p.tags?.some(t => tags.includes(t))) return false;
-    if (excludeSolved.has(`${p.contestId}-${p.index}`)) return false;
+    if (excludeSolved.has(key)) return false;
+    if (desiredDivisions.size && !desiredDivisions.has(p.division)) return false;
+    if ((p.solvedCount || 0) < minSolvedCount) return false;
     return true;
   });
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+
+  const scored = pool
+    .map(problem => ({ problem, score: computeProblemScore(problem, { targetRating, desiredDivisions, tags }) }))
+    .sort((a, b) => b.score - a.score);
+
+  for (const entry of scored) {
+    if (selected.length >= count) break;
+    selected.push(entry.problem);
   }
-  return pool.slice(0, count);
+
+  return selected.slice(0, count);
+}
+
+function computeProblemScore(problem, { targetRating, desiredDivisions, tags }) {
+  const ratingDistance = Math.abs((problem.rating || targetRating) - targetRating);
+  const ratingScore = Math.max(0, 250 - ratingDistance);
+  const solvedScore = Math.log10((problem.solvedCount || 0) + 1) * 80;
+  const tagScore = tags.length && problem.tags?.some(t => tags.includes(t)) ? 35 : 0;
+  const divisionScore = desiredDivisions.size
+    ? (desiredDivisions.has(problem.division) ? 40 : -80)
+    : (problem.division || 1) * 10;
+  const jitter = Math.random() * 12;
+  return ratingScore + solvedScore + tagScore + divisionScore + jitter;
+}
+
+function normalizeProblemRef(raw) {
+  if (!raw) return null;
+  const value = String(raw).trim();
+  if (!value) return null;
+
+  const cfMatch = value.match(/problem(?:set)?\/problem\/(\d+)\/([A-Za-z0-9]+)/i);
+  if (cfMatch) return `${cfMatch[1]}-${cfMatch[2]}`.toLowerCase();
+  const contestMatch = value.match(/contest\/(\d+)\/problem\/([A-Za-z0-9]+)/i);
+  if (contestMatch) return `${contestMatch[1]}-${contestMatch[2]}`.toLowerCase();
+
+  const rawKeyMatch = value.match(/^(\d+)\s*[-/]\s*([A-Za-z0-9]+)$/);
+  if (rawKeyMatch) return `${rawKeyMatch[1]}-${rawKeyMatch[2]}`.toLowerCase();
+
+  return null;
 }
 
 // ── Compartir link ─────────────────────────────────────────

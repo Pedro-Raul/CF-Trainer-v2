@@ -127,6 +127,24 @@ function ensureModal() {
         </div>
       </div>
 
+      <label>Ejercicios específicos <span class="field-hint" style="text-transform:none;letter-spacing:0">(links de CF o formato 1234-A)</span></label>
+      <textarea id="tnForcedProblems" rows="2" placeholder="https://codeforces.com/problemset/problem/4/A&#10;1900-B"></textarea>
+
+      <div class="tn-modal-row tn-modal-row-compact">
+        <div class="tn-modal-col">
+          <label>Mín. resueltos globales</label>
+          <input id="tnMinSolvedCount" type="text" value="0" placeholder="ej. 5000">
+        </div>
+        <div class="tn-modal-col">
+          <label>Divisiones CF</label>
+          <div class="tn-div-picker" id="tnDivPicker">
+            ${[1,2,3,4].map(div => `
+              <button type="button" class="tn-div-option" data-div="${div}" onclick="toggleDivision(this)">Div ${div}</button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+
       <!-- Tags -->
       <label>Categorías <span class="field-hint" style="text-transform:none;letter-spacing:0">(opcional)</span></label>
       <div class="tags-picker" id="tnTagsPicker">
@@ -359,6 +377,10 @@ function bindGlobals() {
       .forEach(el => el.classList.remove('checked'));
     refreshChips();
     document.getElementById('tnName').value = '';
+    document.getElementById('tnForcedProblems').value = '';
+    document.getElementById('tnMinSolvedCount').value = '0';
+    document.querySelectorAll('#tnDivPicker .tn-div-option')
+      .forEach(btn => btn.classList.remove('selected'));
     document.getElementById('tnModalErr').innerHTML = '';
     document.getElementById('tnModal').style.display = 'flex';
     setTimeout(() => document.getElementById('tnName')?.focus(), 50);
@@ -369,6 +391,7 @@ function bindGlobals() {
   };
 
   window.toggleTag = el => el.classList.toggle('selected');
+  window.toggleDivision = el => el.classList.toggle('selected');
 
   window.toggleFriendParticipant = (cb) => {
     const handle = cb.value;
@@ -424,8 +447,15 @@ function bindGlobals() {
     const count     = Number(document.getElementById('tnCount').value);
     const ratingMin = Number(document.getElementById('tnRMin').value) || 800;
     const ratingMax = Number(document.getElementById('tnRMax').value) || 3500;
+    const minSolvedCount = Math.max(0, Number(document.getElementById('tnMinSolvedCount').value) || 0);
+    const forcedProblemRefs = document.getElementById('tnForcedProblems').value
+      .split(/\n|,|;/)
+      .map(item => item.trim())
+      .filter(Boolean);
     const tags      = [...document.querySelectorAll('#tnTagsPicker .tag-option.selected')]
                         .map(el => el.dataset.tag);
+    const divisions = [...document.querySelectorAll('#tnDivPicker .tn-div-option.selected')]
+      .map(el => Number(el.dataset.div));
 
     if (!name) {
       errEl.innerHTML = `<span class="msg-err">Ponle un nombre al torneo</span>`;
@@ -442,7 +472,17 @@ function bindGlobals() {
             .map(s => `${s.problem.contestId}-${s.problem.index}`)
     );
 
-    const picked = pickProblems({ problems: state.problems, ratingMin, ratingMax, tags, count, excludeSolved: excluded });
+    const picked = pickProblems({
+      problems: state.problems,
+      ratingMin,
+      ratingMax,
+      tags,
+      count,
+      excludeSolved: excluded,
+      forcedProblemRefs,
+      minSolvedCount,
+      divisions
+    });
     if (!picked.length) {
       errEl.innerHTML = `<span class="msg-err">Sin problemas con esos filtros — amplía el rango</span>`;
       return;
