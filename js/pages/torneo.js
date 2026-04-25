@@ -8,7 +8,8 @@ import {
   getTournamentShareLink,
   decodeTournamentFromURL,
   verifySolutions,
-  syncTournamentParticipants
+  syncTournamentParticipants,
+  hydrateTournamentParticipants
 } from '../services/tournament.js';
 
 const CF_TAGS = [
@@ -23,6 +24,7 @@ let _modal = {
   participants: [],   // handles extra seleccionados
   customInput: ''
 };
+const _autoSyncingTournamentIds = new Set();
 
 // ── Entry point ────────────────────────────────────────────
 
@@ -30,6 +32,7 @@ export function loadTorneo() {
   const page = document.querySelector('.page[data-page="torneo"]');
   if (!page) return;
   renderPage(page);
+  hydrateVisibleTournaments();
 }
 
 // ── Render principal ───────────────────────────────────────
@@ -230,6 +233,9 @@ function renderCard(t) {
   const pct       = total ? Math.round((mySolved / total) * 100) : 0;
   const updated   = t.lastUpdated ? timeAgo(t.lastUpdated) : 'nunca';
   const globalSync = t.lastGlobalSyncAt ? ` · global: ${timeAgo(t.lastGlobalSyncAt)}` : '';
+  const syncLabel = t.lastGlobalSyncAt
+    ? `Datos sincronizados desde Codeforces · última actualización ${timeAgo(t.lastGlobalSyncAt)}`
+    : 'Datos pendientes de sincronización desde Codeforces';
 
   return `
   <div class="tn-card" id="tnc-${t.id}">
@@ -268,13 +274,14 @@ function renderCard(t) {
     <!-- Botón verificar -->
     <div class="tn-verify-row">
       <button class="tn-verify-btn secondary" id="tnVBtn-${t.id}" onclick="verifyUI(${t.id})">
-        ↻ Verificar mis soluciones en CF
+        ↻ Actualizar mi progreso
       </button>
       <button class="tn-verify-btn secondary" id="tnSyncAll-${t.id}" onclick="syncAllParticipantsUI(${t.id})">
-        ↻ Sincronizar participantes
+        ↻ Sincronizar participantes del torneo
       </button>
       <span class="tn-verify-hint" id="tnVHint-${t.id}">Actualizado: ${updated}${globalSync}</span>
     </div>
+    <div class="tn-sync-banner">${syncLabel}</div>
 
     <!-- Grid de participantes -->
     <div class="tn-pgrid" id="tnPgrid-${t.id}">
@@ -320,12 +327,15 @@ function renderCard(t) {
       <div class="tn-lb-title">Clasificación</div>
       ${lb.map((u, i) => {
         const isMe = u.handle.toLowerCase() === user.handle.toLowerCase();
+        const isFriend = state.friends.some(f => f.handle.toLowerCase() === u.handle.toLowerCase());
+        const roleLabel = isMe ? 'Tú' : isFriend ? 'Amigo' : 'Externo';
+        const roleClass = isMe ? 'tn-role-pill-me' : isFriend ? 'tn-role-pill-friend' : 'tn-role-pill-external';
         return `
         <div class="tn-lb-row ${isMe ? 'tn-lb-me' : ''}">
           <span class="lb-pos ${i===0?'gold':i===1?'silver':i===2?'bronze':''}">${i+1}</span>
           <span class="tn-lb-avatar ${isMe ? 'tn-lb-avatar-me' : ''}">${getHandleInitial(u.handle)}</span>
           <span class="tn-lb-handle">${u.handle}</span>
-          <span class="tn-role-pill ${isMe ? 'tn-role-pill-me' : ''}">${isMe ? 'Tú' : 'Participante'}</span>
+          <span class="tn-role-pill ${roleClass}">${roleLabel}</span>
           <div class="tn-lb-bar-wrap">
             <div class="tn-lb-bar" style="width:${total ? Math.round((u.count/total)*100) : 0}%"></div>
           </div>
@@ -339,20 +349,22 @@ function renderCard(t) {
 
 function renderParticipantGrid(t, lb) {
   const total = t.problems.length;
-  if (!lb.length) return '<p class="empty-msg" style="padding:8px 0;font-size:10px;">Sin datos — presiona Verificar</p>';
+  if (!lb.length) return '<p class="empty-msg" style="padding:8px 0;font-size:10px;">Sin datos — presiona Actualizar mi progreso</p>';
 
   const user = state.currentUser;
+  const friendHandles = new Set((state.friends || []).map(f => f.handle.toLowerCase()));
   return lb.map(u => {
     const isMe = u.handle.toLowerCase() === user.handle.toLowerCase();
     const pct  = total ? Math.round((u.count / total) * 100) : 0;
     const p = t.participants.find(item => item.handle.toLowerCase() === u.handle.toLowerCase());
+    const role = isMe ? 'Tú' : friendHandles.has(u.handle.toLowerCase()) ? 'Amigo' : 'Externo';
     return `
       <div class="tn-pg-item ${isMe ? 'tn-pg-me' : ''}">
         <div class="tn-pg-head">
           <span class="tn-pg-avatar ${isMe ? 'tn-pg-avatar-me' : ''}">${getHandleInitial(u.handle)}</span>
           <div class="tn-pg-head-text">
             <div class="tn-pg-handle">${u.handle}</div>
-            <div class="tn-pg-role">${isMe ? 'Tú' : 'Participante'} · ${p?.lastSyncedAt ? `sync ${timeAgo(p.lastSyncedAt)}` : 'sin sync'}</div>
+            <div class="tn-pg-role">${role} · ${p?.lastSyncedAt ? `sync ${timeAgo(p.lastSyncedAt)}` : 'sin sync'}</div>
           </div>
         </div>
         <div class="tn-pg-bar-wrap">
@@ -491,7 +503,8 @@ function bindGlobals() {
     if (btn) { btn.disabled = true; btn.textContent = 'Creando…'; }
 
     try {
-      createTournament({ name, problems: picked, creatorHandle: user.handle, participantHandles: _modal.participants });
+      const created = createTournament({ name, problems: picked, creatorHandle: user.handle, participantHandles: _modal.participants });
+      hydrateTournamentParticipants(created.id).catch(err => console.warn('No se pudo hidratar torneo recién creado:', err));
       window.hideCreateModal();
       loadTorneo();
     } finally {
@@ -517,7 +530,8 @@ function bindGlobals() {
       const data = decodeTournamentFromURL(tParam);
       if (!data) throw new Error('Link corrupto o inválido');
 
-      importTournament(data);
+      const imported = importTournament(data);
+      hydrateTournamentParticipants(imported.id).catch(err => console.warn('No se pudo hidratar torneo importado:', err));
       input.value = '';
       showMsg(`✓ Torneo "${data.name}" importado correctamente`);
       loadTorneo();
@@ -565,7 +579,7 @@ function bindGlobals() {
       bindGlobals();
     } catch (err) {
       btn.disabled  = false;
-      btn.textContent = '↻ Verificar mis soluciones en CF';
+      btn.textContent = '↻ Actualizar mi progreso';
       if (hint) hint.textContent = `Error: ${err.message}`;
     }
   };
@@ -595,7 +609,7 @@ function bindGlobals() {
       bindGlobals();
     } catch (err) {
       btn.disabled = false;
-      btn.textContent = '↻ Sincronizar participantes';
+      btn.textContent = '↻ Sincronizar participantes del torneo';
       if (hint) hint.textContent = `Error: ${err.message}`;
     }
   };
@@ -610,6 +624,22 @@ function bindGlobals() {
       alert(err.message);
     }
   };
+}
+
+async function hydrateVisibleTournaments() {
+  const candidates = state.tournaments.filter(t => {
+    if (_autoSyncingTournamentIds.has(t.id)) return false;
+    if (!t.lastGlobalSyncAt) return true;
+    return t.participants.some(p => !p.lastSyncedAt);
+  });
+
+  for (const tournament of candidates) {
+    _autoSyncingTournamentIds.add(tournament.id);
+    hydrateTournamentParticipants(tournament.id)
+      .then(() => loadTorneo())
+      .catch(err => console.warn(`No se pudo hidratar torneo ${tournament.id}:`, err))
+      .finally(() => _autoSyncingTournamentIds.delete(tournament.id));
+  }
 }
 
 // ── UI helpers ─────────────────────────────────────────────

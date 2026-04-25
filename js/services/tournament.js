@@ -1,5 +1,5 @@
 import { state } from '../core/state.js';
-import { saveTournaments, loadTournaments } from '../core/storage.js';
+import { saveTournaments, loadTournaments, saveSubmissions } from '../core/storage.js';
 import { getCFSubmissions } from './codeforces.js';
 
 const SUBMISSION_FIELDS = ['id', 'verdict', 'creationTimeSeconds', 'problem'];
@@ -98,7 +98,7 @@ export async function verifySolutions(tournamentId, handle, onProgress) {
   if (!t) return null;
 
   onProgress?.('fetching');
-  const subs = await getCFSubmissions(handle);
+  const subs = await ensureHandleSubmissions(handle, { forceRefresh: true });
   const normalizedHandle = handle.toLowerCase();
 
   const problemKeys = new Set(t.problems.map(p => `${p.contestId}-${p.index}`));
@@ -107,17 +107,10 @@ export async function verifySolutions(tournamentId, handle, onProgress) {
   );
   if (!participant) return null;
 
-  let newlySolved = 0;
-  for (const sub of subs) {
-    if (sub.verdict !== 'OK' || !sub.problem) continue;
-    const key = `${sub.problem.contestId}-${sub.problem.index}`;
-    if (!problemKeys.has(key)) continue;
-    const ts = sub.creationTimeSeconds * 1000;
-    if (!participant.solvedAt[key] || ts < participant.solvedAt[key]) {
-      if (!participant.solvedAt[key]) newlySolved++;
-      participant.solvedAt[key] = ts;
-    }
-  }
+  const beforeSolved = Object.keys(participant.solvedAt || {}).length;
+  participant.solvedAt = deriveSolvedAtForParticipant(subs, problemKeys);
+  const afterSolved = Object.keys(participant.solvedAt || {}).length;
+  const newlySolved = Math.max(0, afterSolved - beforeSolved);
 
   t.submissionsByHandle[normalizedHandle] = {
     updatedAt: Date.now(),
@@ -138,18 +131,10 @@ export async function syncTournamentParticipants(tournamentId, onProgress) {
 
   for (const participant of t.participants) {
     onProgress?.({ handle: participant.handle, status: 'fetching' });
-    const subs = await getCFSubmissions(participant.handle);
+    const subs = await ensureHandleSubmissions(participant.handle, { forceRefresh: true });
     const handle = participant.handle.toLowerCase();
 
-    for (const sub of subs) {
-      if (sub.verdict !== 'OK' || !sub.problem) continue;
-      const key = `${sub.problem.contestId}-${sub.problem.index}`;
-      if (!problemKeys.has(key)) continue;
-      const ts = sub.creationTimeSeconds * 1000;
-      if (!participant.solvedAt[key] || ts < participant.solvedAt[key]) {
-        participant.solvedAt[key] = ts;
-      }
-    }
+    participant.solvedAt = deriveSolvedAtForParticipant(subs, problemKeys);
 
     participant.lastSyncedAt = Date.now();
     t.submissionsByHandle[handle] = {
@@ -164,6 +149,35 @@ export async function syncTournamentParticipants(tournamentId, onProgress) {
   t.lastGlobalSyncAt = Date.now();
   saveTournaments(state.tournaments);
   return { tournament: t, synced };
+}
+
+export async function hydrateTournamentParticipants(tournamentId, onProgress) {
+  const t = state.tournaments.find(item => item.id === tournamentId);
+  if (!t) return null;
+
+  const problemKeys = new Set(t.problems.map(p => `${p.contestId}-${p.index}`));
+  let hydrated = 0;
+
+  for (const participant of t.participants) {
+    const handle = participant.handle.toLowerCase();
+    onProgress?.({ handle, status: 'fetching' });
+
+    const subs = await ensureHandleSubmissions(handle);
+    participant.solvedAt = deriveSolvedAtForParticipant(subs, problemKeys);
+    participant.lastSyncedAt = Date.now();
+
+    t.submissionsByHandle[handle] = {
+      updatedAt: Date.now(),
+      submissions: reduceTournamentSubmissions(subs, problemKeys)
+    };
+    hydrated++;
+    onProgress?.({ handle, status: 'done' });
+  }
+
+  t.lastUpdated = Date.now();
+  t.lastGlobalSyncAt = Date.now();
+  saveTournaments(state.tournaments);
+  return { tournament: t, hydrated };
 }
 
 // ── Eliminar ───────────────────────────────────────────────
@@ -350,6 +364,29 @@ function reduceTournamentSubmissions(submissions, problemKeys) {
     .map(sub => pickSubmissionFields(sub))
     .sort((a, b) => (b.creationTimeSeconds || 0) - (a.creationTimeSeconds || 0))
     .slice(0, 300);
+}
+
+async function ensureHandleSubmissions(handle, { forceRefresh = false } = {}) {
+  const normalized = handle.toLowerCase();
+  const cached = state.submissions[normalized];
+  if (!forceRefresh && Array.isArray(cached) && cached.length) return cached;
+
+  const subs = await getCFSubmissions(normalized);
+  state.submissions[normalized] = subs;
+  saveSubmissions(state.submissions);
+  return subs;
+}
+
+function deriveSolvedAtForParticipant(submissions, problemKeys) {
+  const solvedAt = {};
+  for (const sub of submissions || []) {
+    if (sub?.verdict !== 'OK' || !sub.problem) continue;
+    const key = `${sub.problem.contestId}-${sub.problem.index}`;
+    if (!problemKeys.has(key)) continue;
+    const ts = (sub.creationTimeSeconds || 0) * 1000;
+    if (!solvedAt[key] || ts < solvedAt[key]) solvedAt[key] = ts;
+  }
+  return solvedAt;
 }
 
 function pickSubmissionFields(sub) {
