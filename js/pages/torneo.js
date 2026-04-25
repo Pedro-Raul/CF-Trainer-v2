@@ -44,28 +44,38 @@ function renderPage(page) {
     page.innerHTML = `
       <div class="page-header">
         <div class="page-title">Torneos</div>
-        <div class="page-sub">Compite contra tus amigos</div>
+        <div class="page-sub">Compite contra tus amigos con flujo tipo VJudge: crea, comparte y sincroniza.</div>
       </div>
 
-      <div class="tn-topbar">
-        <button class="tn-create-btn" onclick="showCreateModal()">
-          <span>＋</span> Crear torneo
-        </button>
-        <div class="tn-import-wrap">
-          <input id="tnImportInput" type="text"
-                 placeholder="Pega el link de invitación aquí…"
-                 onkeydown="if(event.key==='Enter')joinTournamentFromUI()">
-          <button class="secondary" onclick="joinTournamentFromUI()">Importar</button>
+      <div class="tn-hub">
+        <div class="tn-topbar">
+          <button class="tn-create-btn" onclick="showCreateModal()">
+            <span>＋</span> Nuevo torneo
+          </button>
+          <div class="tn-import-wrap">
+            <input id="tnImportInput" type="text"
+                   placeholder="Pega el link de invitación (https://...)"
+                   onkeydown="if(event.key==='Enter')joinTournamentFromUI()">
+            <button class="secondary" onclick="joinTournamentFromUI()">Unirme</button>
+          </div>
+        </div>
+        <div class="tn-hub-guide">
+          <div class="tn-guide-title">Flujo rápido</div>
+          <div class="tn-guide-steps">
+            <span><strong>1.</strong> Crea torneo</span>
+            <span><strong>2.</strong> Comparte link</span>
+            <span><strong>3.</strong> Sincroniza resultados</span>
+          </div>
         </div>
       </div>
       <div id="tnMsg" class="tn-msg"></div>
 
       <div class="tn-section">
-        <div class="tn-section-title">Mis torneos</div>
+        <div class="tn-section-title">Mis torneos <span id="tnMineCount" class="tn-count-pill">0</span></div>
         <div id="tnMine"></div>
       </div>
       <div class="tn-section">
-        <div class="tn-section-title">Torneos donde participo</div>
+        <div class="tn-section-title">Torneos donde participo <span id="tnJoinedCount" class="tn-count-pill">0</span></div>
         <div id="tnJoined"></div>
       </div>
     `;
@@ -78,6 +88,10 @@ function renderPage(page) {
     t.creator.toLowerCase() !== user.handle.toLowerCase() &&
     t.participants.some(p => p.handle.toLowerCase() === user.handle.toLowerCase())
   );
+  const mineCountEl = page.querySelector('#tnMineCount');
+  const joinedCountEl = page.querySelector('#tnJoinedCount');
+  if (mineCountEl) mineCountEl.textContent = String(mine.length);
+  if (joinedCountEl) joinedCountEl.textContent = String(joined.length);
 
   page.querySelector('#tnMine').innerHTML = mine.length
     ? mine.map(t => renderCard(t)).join('')
@@ -236,6 +250,7 @@ function renderCard(t) {
   const syncLabel = t.lastGlobalSyncAt
     ? `Datos sincronizados desde Codeforces · última actualización ${timeAgo(t.lastGlobalSyncAt)}`
     : 'Datos pendientes de sincronización desde Codeforces';
+  const progressTone = pct >= 80 ? 'tn-kpi-good' : pct >= 40 ? 'tn-kpi-mid' : 'tn-kpi-low';
 
   return `
   <div class="tn-card" id="tnc-${t.id}">
@@ -260,6 +275,12 @@ function renderCard(t) {
       </div>
     </div>
 
+    <div class="tn-kpis">
+      <span class="tn-kpi ${progressTone}">Progreso: ${mySolved}/${total}</span>
+      <span class="tn-kpi">Puesto: #${myPos}</span>
+      <span class="tn-kpi">Participantes: ${t.participants.length}</span>
+    </div>
+
     <!-- Mi progreso -->
     <div class="tn-my-progress">
       <div class="tn-progress-label">
@@ -274,16 +295,17 @@ function renderCard(t) {
     <!-- Botón verificar -->
     <div class="tn-verify-row">
       <button class="tn-verify-btn secondary" id="tnVBtn-${t.id}" onclick="verifyUI(${t.id})">
-        ↻ Actualizar mi progreso
+        ↻ Verificar mis envíos
       </button>
       <button class="tn-verify-btn secondary" id="tnSyncAll-${t.id}" onclick="syncAllParticipantsUI(${t.id})">
-        ↻ Sincronizar participantes del torneo
+        ↻ Sincronizar todos
       </button>
       <span class="tn-verify-hint" id="tnVHint-${t.id}">Actualizado: ${updated}${globalSync}</span>
     </div>
     <div class="tn-sync-banner">${syncLabel}</div>
 
     <!-- Grid de participantes -->
+    <div class="tn-block-title">Participantes</div>
     <div class="tn-pgrid" id="tnPgrid-${t.id}">
       ${renderParticipantGrid(t, lb)}
     </div>
@@ -324,7 +346,7 @@ function renderCard(t) {
 
     <!-- Leaderboard -->
     <div class="tn-lb">
-      <div class="tn-lb-title">Clasificación</div>
+      <div class="tn-block-title">Clasificación</div>
       ${lb.map((u, i) => {
         const isMe = u.handle.toLowerCase() === user.handle.toLowerCase();
         const isFriend = state.friends.some(f => f.handle.toLowerCase() === u.handle.toLowerCase());

@@ -2220,8 +2220,43 @@ input::placeholder { color: var(--muted2); }
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
   flex-wrap: wrap;
+}
+.tn-hub {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #121212 0%, #101010 100%);
+  padding: 12px;
+  margin-bottom: 6px;
+}
+.tn-hub-guide {
+  border: 1px dashed var(--border-hi);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  background: #0f0f0f;
+}
+.tn-guide-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  font-family: var(--mono);
+  margin-bottom: 6px;
+}
+.tn-guide-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text);
+}
+.tn-guide-steps span {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-family: var(--mono);
 }
 .tn-create-btn {
   display: flex;
@@ -2257,6 +2292,17 @@ input::placeholder { color: var(--muted2); }
   color: var(--muted);
   font-family: var(--mono);
   margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tn-count-pill {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  color: var(--text);
 }
 
 /* ── Card ────────────────────────────────────────────────── */
@@ -2301,6 +2347,24 @@ input::placeholder { color: var(--muted2); }
   padding: 5px 12px;
   white-space: nowrap;
 }
+.tn-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.tn-kpi {
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: var(--surface2);
+}
+.tn-kpi-good { color: var(--green); border-color: #1d3a25; background: #07120b; }
+.tn-kpi-mid { color: var(--amber); border-color: #3d2e0e; background: #151005; }
+.tn-kpi-low { color: var(--blue); border-color: #172f4f; background: #07111d; }
 
 /* ── Mi progreso ──────────────────────────────────────────── */
 .tn-my-progress { margin-bottom: 12px; }
@@ -2447,6 +2511,15 @@ input::placeholder { color: var(--muted2); }
 
 /* ── Problemas ────────────────────────────────────────────── */
 .tn-problems-header {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-family: var(--mono);
+  margin-bottom: 6px;
+}
+.tn-block-title {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: .08em;
@@ -2744,4 +2817,5 @@ input::placeholder { color: var(--muted2); }
   .tn-pgrid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
   .tn-card-head { flex-direction: column; }
   .tn-card-actions { align-self: flex-end; }
+  .tn-guide-steps { flex-direction: column; gap: 6px; }
 }
